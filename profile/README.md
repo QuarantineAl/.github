@@ -52,7 +52,7 @@ That's it. Answer a few prompts and you have a reverse proxy, SSO, observability
 
 ## Contributing
 
-Contributions are welcome — check the [contributing guide](https://github.com/QuarantineAl/platform/blob/main/CONTRIBUTING.md) and open issues labeled `good first issue`.
+Contributions are welcome — check the [contributing guide](https://github.com/QuarantineAl/.github/blob/main/CONTRIBUTING.md) and open issues labeled `good first issue`.
 
 ## License
 
