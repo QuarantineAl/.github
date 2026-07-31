@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/QuarantineAl/.github/main/profile/logo.png" alt="quarantine" width="120" />
+  <img src="https://raw.githubusercontent.com/QuarantineAl/.github/main/profile/logo.svg" alt="quarantine" width="120" />
 </p>
 
 <h1 align="center">quarantine</h1>
