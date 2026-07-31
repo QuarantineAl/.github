@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
+  <!-- Rounded container: the "box" your services live in -->
+  <rect x="20" y="20" width="200" height="200" rx="44" fill="#0d1117" stroke="#30363d" stroke-width="4"/>
+  <!-- Hex ring: isolation / containment motif -->
+  <path d="M120 52 L172 82 L172 142 L120 172 L68 142 L68 82 Z"
+        fill="none" stroke="#3fb950" stroke-width="10" stroke-linejoin="round"/>
+  <!-- Inner dot: the core service -->
+  <circle cx="120" cy="112" r="18" fill="#3fb950"/>
+  <!-- Terminal prompt: self-hosted, CLI-first -->
+  <text x="94" y="205" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+        font-size="34" font-weight="700" fill="#3fb950">&gt;_</text>
+</svg>

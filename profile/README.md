@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/quarantine-al/.github/main/profile/logo.png" alt="quarantine" width="120" />
+  <img src="https://raw.githubusercontent.com/QuarantineAl/.github/main/profile/logo.png" alt="quarantine" width="120" />
 </p>
 
 <h1 align="center">quarantine</h1>
@@ -11,8 +11,8 @@
 
 <p align="center">
   <a href="https://quarantine.al">Website</a> ·
-  <a href="https://github.com/quarantine-al/quarantine">Get Started</a> ·
-  <a href="https://github.com/quarantine-al/quarantine/blob/main/CONTRIBUTING.md">Contributing</a>
+  <a href="https://github.com/QuarantineAl/platform">Get Started</a> ·
+  <a href="https://github.com/QuarantineAl/platform/blob/main/CONTRIBUTING.md">Contributing</a>
 </p>
 
 ---
@@ -20,8 +20,8 @@
 ## Quickstart
 
 ```bash
-git clone https://github.com/quarantine-al/quarantine.git
-cd quarantine
+git clone https://github.com/QuarantineAl/platform.git
+cd platform
 ./quarantine init
 ```
 
@@ -52,7 +52,7 @@ That's it. Answer a few prompts and you have a reverse proxy, SSO, observability
 
 ## Contributing
 
-Contributions are welcome — check the [contributing guide](https://github.com/quarantine-al/quarantine/blob/main/CONTRIBUTING.md) and open issues labeled `good first issue`.
+Contributions are welcome — check the [contributing guide](https://github.com/QuarantineAl/platform/blob/main/CONTRIBUTING.md) and open issues labeled `good first issue`.
 
 ## License
 
