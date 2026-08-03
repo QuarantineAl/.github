@@ -30,4 +30,5 @@ jobs:
           docker compose \
             --project-name "pr-${{ inputs.pr_number }}-${{ inputs.app }}" \
             -f "apps/first-party/${{ inputs.app }}/compose.yaml" \
+            --profile "${{ inputs.app }}" \
             down -v

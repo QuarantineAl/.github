@@ -68,10 +68,17 @@ jobs:
           git pull --ff-only
           export SUBDOMAIN="pr-${{ inputs.pr_number }}-${{ inputs.app }}"
           export DOMAIN="dev.quarantine.al"
-          export ${{ inputs.app }}_VERSION="pr-${{ inputs.pr_number }}"
+          # Matches bin/quarantine's own <name> -> <APP>_VERSION convention
+          # (tr '[:lower:]-' '[:upper:]_') — the compose fragment's
+          # ${LAZARETTO_VERSION:-CHANGEME} is uppercase and interpolation
+          # is case-sensitive, so a lowercase export here would silently
+          # fall through to the CHANGEME placeholder image tag instead.
+          version_var="$(printf '%s' "${{ inputs.app }}" | tr '[:lower:]-' '[:upper:]_')_VERSION"
+          export "${version_var}=pr-${{ inputs.pr_number }}"
           docker compose \
             --project-name "pr-${{ inputs.pr_number }}-${{ inputs.app }}" \
             -f "apps/first-party/${{ inputs.app }}/compose.yaml" \
+            --profile "${{ inputs.app }}" \
             up -d
 
       - name: Comment preview URL on the PR
