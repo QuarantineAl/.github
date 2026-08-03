@@ -77,6 +77,42 @@ jobs:
             ghcr.io/quarantineal/${{ inputs.app }}-frontend:${{ inputs.environment }}
             ghcr.io/quarantineal/${{ inputs.app }}-frontend:${{ inputs.ref }}
 
+      # bin/quarantine requires sops/age-keygen/yq on whatever machine runs
+      # it. install.sh puts those on the VM itself, but this step runs
+      # *inside* the ephemeral runner container (a bare myoung34/github-
+      # runner image) — confirmed missing live: "ERROR: missing required
+      # command(s): sops age-keygen". Same pinned versions/checksums as
+      # platform/install.sh, so both installs stay in lockstep; revisit if
+      # that file's own PIN CHECKPOINT ever moves.
+      - name: Install quarantine CLI dependencies
+        run: |
+          case "$(uname -m)" in
+            x86_64) arch=amd64 ;;
+            aarch64|arm64) arch=arm64 ;;
+            *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq age
+
+          sops_version="3.13.3"
+          yq_version="4.53.3"
+          declare -A sops_sha256=( [amd64]="e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b" [arm64]="53b0abacd38ef1b12a66d6c100956691b9cefce018d91f81e73ddf7438b94d77" )
+          declare -A yq_sha256=( [amd64]="fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4" [arm64]="578648e463a11c1b6db6010cbf41eafed6bee79466fcffa1bb446672cf7945ea" )
+
+          fetch_verified() {
+            local url="$1" expected="$2" dest="$3" tmp actual
+            tmp="$(mktemp)"
+            curl -fsSL -o "$tmp" "$url"
+            actual="$(sha256sum "$tmp" | awk '{print $1}')"
+            [[ "$actual" == "$expected" ]] || { echo "checksum mismatch for ${url}: expected ${expected}, got ${actual}" >&2; exit 1; }
+            chmod +x "$tmp"
+            sudo mv "$tmp" "$dest"
+          }
+
+          fetch_verified "https://github.com/getsops/sops/releases/download/v${sops_version}/sops-v${sops_version}.linux.${arch}" "${sops_sha256[$arch]}" /usr/local/bin/sops
+          fetch_verified "https://github.com/mikefarah/yq/releases/download/v${yq_version}/yq_linux_${arch}" "${yq_sha256[$arch]}" /usr/local/bin/yq
+
       - name: Reconcile via quarantine CLI
         working-directory: ${{ env.QUARANTINE_REPO_PATH }}
         env:
