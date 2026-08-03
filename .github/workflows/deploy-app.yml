@@ -126,10 +126,16 @@ jobs:
           sudo mv "${age_tmp}/age/age" "${age_tmp}/age/age-keygen" /usr/local/bin/
           rm -rf "$age_tmp"
 
+      # QUARANTINE_SKIP_RUNNER: this job runs ON the CI runner pool that
+      # `quarantine start` would otherwise reconcile — recreating that
+      # container mid-job kills the job that's doing the recreating
+      # (confirmed live: "The operation was canceled" — see
+      # platform/bin/quarantine's own comment on this env var).
       - name: Reconcile via quarantine CLI
         working-directory: ${{ env.QUARANTINE_REPO_PATH }}
         env:
           QUARANTINE_CONFIG_FILE: /opt/quarantine/quarantine.yaml
+          QUARANTINE_SKIP_RUNNER: "true"
         run: |
           git pull --ff-only
           ./bin/quarantine app add ${{ inputs.app }} --version ${{ inputs.environment }}
