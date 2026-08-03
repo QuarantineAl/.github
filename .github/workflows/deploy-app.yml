@@ -126,17 +126,34 @@ jobs:
           sudo mv "${age_tmp}/age/age" "${age_tmp}/age/age-keygen" /usr/local/bin/
           rm -rf "$age_tmp"
 
-      # QUARANTINE_SKIP_RUNNER: this job runs ON the CI runner pool that
-      # `quarantine start` would otherwise reconcile — recreating that
-      # container mid-job kills the job that's doing the recreating
-      # (confirmed live: "The operation was canceled" — see
-      # platform/bin/quarantine's own comment on this env var).
-      - name: Reconcile via quarantine CLI
+      # Deliberately NOT `quarantine start`: that reconciles the WHOLE
+      # environment (traefik, postgres, zitadel, observability, the CI
+      # runner pool itself, ...), which a routine app deploy has no reason
+      # to touch — and when invoked from a job running ON the runner it
+      # would reconcile, a runner recreate kills the job doing the
+      # recreating (confirmed live: "The operation was canceled").
+      # `quarantine app add` still runs, for manifest.yaml/GitOps
+      # bookkeeping. Bringing the app's own container(s) up is then a
+      # directly-scoped `docker compose up`, same pattern pr-sandbox-up.yml
+      # already uses for PR previews — just against the persistent
+      # environment project instead of an isolated pr-<n> one, so it joins
+      # the existing quarantine-<env> stack rather than starting a second
+      # disconnected one. Traefik's `--providers.docker` watches the Docker
+      # socket for container events live, so it picks up the new/replaced
+      # container's routing labels with no restart of its own.
+      - name: Deploy app's own service(s) only
         working-directory: ${{ env.QUARANTINE_REPO_PATH }}
         env:
           QUARANTINE_CONFIG_FILE: /opt/quarantine/quarantine.yaml
-          QUARANTINE_SKIP_RUNNER: "true"
         run: |
           git pull --ff-only
           ./bin/quarantine app add ${{ inputs.app }} --version ${{ inputs.environment }}
-          ./bin/quarantine start
+
+          export DOMAIN="$(yq eval '.domain' "$QUARANTINE_CONFIG_FILE")"
+          version_var="$(printf '%s' "${{ inputs.app }}" | tr '[:lower:]-' '[:upper:]_')_VERSION"
+          export "${version_var}=${{ inputs.environment }}"
+          docker compose \
+            --project-name "quarantine-${{ inputs.environment }}" \
+            -f "apps/first-party/${{ inputs.app }}/compose.yaml" \
+            --profile "${{ inputs.app }}" \
+            up -d
