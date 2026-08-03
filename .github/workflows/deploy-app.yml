@@ -1,0 +1,87 @@
+name: Deploy app (reusable)
+
+# Called by a first-party app repo's own thin caller workflow (e.g.
+# lazaretto's deploy-develop.yml). Builds+pushes that app's image(s) to
+# GHCR, then reconciles it into the target environment via the `quarantine`
+# CLI (QuarantineAl/platform, already checked out at /opt/quarantine/repo on
+# the runner host — see platform/install.sh). Runs on the shared,
+# ephemeral, trusted-only runner pool — never for untrusted/fork-PR code.
+#
+# Assumes a two-image app shape (backend + frontend), matching lazaretto
+# today. If a future first-party app has a different shape, this workflow
+# needs a per-app branch, not a rewrite — keep it generic where possible.
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        description: Catalog/profile name in platform's catalog.yaml (e.g. "lazaretto")
+        required: true
+        type: string
+      environment:
+        description: Target quarantine environment name (e.g. "dev")
+        required: true
+        type: string
+      ref:
+        description: Commit SHA to deploy
+        required: true
+        type: string
+
+env:
+  QUARANTINE_REPO_PATH: /opt/quarantine/repo
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, quarantine-dev]
+    steps:
+      - name: Checkout app repo
+        uses: actions/checkout@v4
+        with:
+          repository: QuarantineAl/${{ inputs.app }}
+          ref: ${{ inputs.ref }}
+          path: app
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # lazaretto-specific: frontend/Dockerfile deliberately reads only
+      # frontend/.env.production (never a build ARG/ENV — an already-set
+      # process.env value, even empty, silently wins over the .env file, see
+      # that Dockerfile's own comment). Rewriting the file before build is
+      # the supported way to point a build at this environment's API host.
+      - name: Point frontend build at this environment's API host
+        if: inputs.app == 'lazaretto'
+        run: |
+          api_host="${{ inputs.app }}-api.${{ inputs.environment == 'dev' && 'dev.quarantine.al' || 'quarantine.al' }}"
+          echo "VITE_API_BASE=https://${api_host}" > app/frontend/.env.production
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: app/backend
+          push: true
+          tags: |
+            ghcr.io/quarantineal/${{ inputs.app }}-backend:${{ inputs.environment }}
+            ghcr.io/quarantineal/${{ inputs.app }}-backend:${{ inputs.ref }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: app/frontend
+          push: true
+          tags: |
+            ghcr.io/quarantineal/${{ inputs.app }}-frontend:${{ inputs.environment }}
+            ghcr.io/quarantineal/${{ inputs.app }}-frontend:${{ inputs.ref }}
+
+      - name: Reconcile via quarantine CLI
+        working-directory: ${{ env.QUARANTINE_REPO_PATH }}
+        env:
+          QUARANTINE_CONFIG_FILE: /opt/quarantine/quarantine.yaml
+        run: |
+          git pull --ff-only
+          ./bin/quarantine app add ${{ inputs.app }} --version ${{ inputs.environment }}
+          ./bin/quarantine start

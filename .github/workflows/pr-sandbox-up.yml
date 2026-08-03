@@ -1,0 +1,93 @@
+name: PR sandbox up (reusable)
+
+# Called on pull_request opened/synchronize/reopened. Builds+pushes a
+# pr-<n>-tagged image, then brings up an isolated sandbox directly via
+# `docker compose -p pr-<n>-<app>` — deliberately NOT through `quarantine
+# app add`/manifest.yaml, since a PR sandbox is ephemeral, workflow-driven
+# state, not the environment's committed desired state. The Compose project
+# name is the whole isolation unit (own containers/network/volume) — see
+# platform/docs/runners-and-sandboxing.md.
+#
+# Reuses the same catalog compose fragment
+# (apps/first-party/<app>/compose.yaml) as the persistent catalog app, on
+# the `edge` network so Traefik's existing label-based discovery picks it
+# up with no new mechanism. Requires that fragment to template its Host()
+# rules off a SUBDOMAIN var rather than a literal name — see platform's own
+# apps/first-party/lazaretto/compose.yaml.
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        required: true
+        type: string
+      pr_number:
+        required: true
+        type: string
+      ref:
+        required: true
+        type: string
+
+env:
+  QUARANTINE_REPO_PATH: /opt/quarantine/repo
+
+jobs:
+  up:
+    runs-on: [self-hosted, quarantine-dev]
+    steps:
+      - name: Checkout app repo
+        uses: actions/checkout@v4
+        with:
+          repository: QuarantineAl/${{ inputs.app }}
+          ref: ${{ inputs.ref }}
+          path: app
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Point frontend build at this PR's API host
+        if: inputs.app == 'lazaretto'
+        run: |
+          echo "VITE_API_BASE=https://pr-${{ inputs.pr_number }}-${{ inputs.app }}-api.dev.quarantine.al" > app/frontend/.env.production
+
+      - name: Build and push PR-tagged images
+        run: |
+          tag="pr-${{ inputs.pr_number }}"
+          docker build -t "ghcr.io/quarantineal/${{ inputs.app }}-backend:${tag}" app/backend
+          docker build -t "ghcr.io/quarantineal/${{ inputs.app }}-frontend:${tag}" app/frontend
+          docker push "ghcr.io/quarantineal/${{ inputs.app }}-backend:${tag}"
+          docker push "ghcr.io/quarantineal/${{ inputs.app }}-frontend:${tag}"
+
+      - name: Bring up the sandbox
+        working-directory: ${{ env.QUARANTINE_REPO_PATH }}
+        run: |
+          git pull --ff-only
+          export SUBDOMAIN="pr-${{ inputs.pr_number }}-${{ inputs.app }}"
+          export DOMAIN="dev.quarantine.al"
+          # Matches bin/quarantine's own <name> -> <APP>_VERSION convention
+          # (tr '[:lower:]-' '[:upper:]_') — the compose fragment's
+          # ${LAZARETTO_VERSION:-CHANGEME} is uppercase and interpolation
+          # is case-sensitive, so a lowercase export here would silently
+          # fall through to the CHANGEME placeholder image tag instead.
+          version_var="$(printf '%s' "${{ inputs.app }}" | tr '[:lower:]-' '[:upper:]_')_VERSION"
+          export "${version_var}=pr-${{ inputs.pr_number }}"
+          docker compose \
+            --project-name "pr-${{ inputs.pr_number }}-${{ inputs.app }}" \
+            -f "apps/first-party/${{ inputs.app }}/compose.yaml" \
+            --profile "${{ inputs.app }}" \
+            up -d
+
+      - name: Comment preview URL on the PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: 'QuarantineAl',
+              repo: '${{ inputs.app }}',
+              issue_number: ${{ inputs.pr_number }},
+              body: 'Preview: https://pr-${{ inputs.pr_number }}-${{ inputs.app }}.dev.quarantine.al'
+            })

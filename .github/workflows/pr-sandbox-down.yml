@@ -1,0 +1,34 @@
+name: PR sandbox down (reusable)
+
+# Called on pull_request closed (merged or not — a closed PR's sandbox is
+# equally useless either way). Tears down the isolated Compose project;
+# volumes go with it (-v), since this is throwaway per-PR state, not data
+# worth retaining. Does not touch Postgres/Zitadel reap-mode provisioning —
+# that's only needed once a PR sandbox opts into needs_db/needs_oidc, which
+# lazaretto's catalog entry does not (own SQLite, no auth yet).
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        required: true
+        type: string
+      pr_number:
+        required: true
+        type: string
+
+env:
+  QUARANTINE_REPO_PATH: /opt/quarantine/repo
+
+jobs:
+  down:
+    runs-on: [self-hosted, quarantine-dev]
+    steps:
+      - name: Tear down the sandbox
+        working-directory: ${{ env.QUARANTINE_REPO_PATH }}
+        run: |
+          docker compose \
+            --project-name "pr-${{ inputs.pr_number }}-${{ inputs.app }}" \
+            -f "apps/first-party/${{ inputs.app }}/compose.yaml" \
+            --profile "${{ inputs.app }}" \
+            down -v
