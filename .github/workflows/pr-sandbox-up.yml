@@ -14,11 +14,24 @@ name: PR sandbox up (reusable)
 # up with no new mechanism. Requires that fragment to template its Host()
 # rules off a SUBDOMAIN var rather than a literal name — see platform's own
 # apps/first-party/lazaretto/compose.yaml.
+#
+# `environment` picks which environment's runner pool/host this sandbox
+# lands on ("dev" or "prod", never anything else) — the caller workflow
+# decides this from the PR's *base* branch (develop -> dev, main -> prod),
+# not from anything in this workflow. dev's sandboxes get hostnames one
+# level below dev.quarantine.al; prod's get hostnames one level below the
+# bare quarantine.al root — both already covered by that environment's own
+# wildcard cert with zero extra DNS/ACME work (see
+# platform/docs/runners-and-sandboxing.md).
 
 on:
   workflow_call:
     inputs:
       app:
+        required: true
+        type: string
+      environment:
+        description: Target quarantine environment name ("dev" or "prod") — picks the runner pool and the base domain a PR hostname is built under
         required: true
         type: string
       pr_number:
@@ -33,7 +46,7 @@ env:
 
 jobs:
   up:
-    runs-on: [self-hosted, quarantine-dev]
+    runs-on: [self-hosted, "quarantine-${{ inputs.environment }}"]
     steps:
       - name: Checkout app repo
         uses: actions/checkout@v4
@@ -51,8 +64,10 @@ jobs:
 
       - name: Point frontend build at this PR's API host
         if: inputs.app == 'lazaretto'
+        env:
+          BASE_DOMAIN: ${{ inputs.environment == 'dev' && 'dev.quarantine.al' || 'quarantine.al' }}
         run: |
-          echo "VITE_API_BASE=https://pr-${{ inputs.pr_number }}-${{ inputs.app }}-api.dev.quarantine.al" > app/frontend/.env.production
+          echo "VITE_API_BASE=https://pr-${{ inputs.pr_number }}-${{ inputs.app }}-api.${BASE_DOMAIN}" > app/frontend/.env.production
 
       - name: Build and push PR-tagged images
         run: |
@@ -64,10 +79,12 @@ jobs:
 
       - name: Bring up the sandbox
         working-directory: ${{ env.QUARANTINE_REPO_PATH }}
+        env:
+          BASE_DOMAIN: ${{ inputs.environment == 'dev' && 'dev.quarantine.al' || 'quarantine.al' }}
         run: |
           git pull --ff-only
           export SUBDOMAIN="pr-${{ inputs.pr_number }}-${{ inputs.app }}"
-          export DOMAIN="dev.quarantine.al"
+          export DOMAIN="${BASE_DOMAIN}"
           # Matches bin/quarantine's own <name> -> <APP>_VERSION convention
           # (tr '[:lower:]-' '[:upper:]_') — the compose fragment's
           # ${LAZARETTO_VERSION:-CHANGEME} is uppercase and interpolation
@@ -83,11 +100,13 @@ jobs:
 
       - name: Comment preview URL on the PR
         uses: actions/github-script@v7
+        env:
+          BASE_DOMAIN: ${{ inputs.environment == 'dev' && 'dev.quarantine.al' || 'quarantine.al' }}
         with:
           script: |
             github.rest.issues.createComment({
               owner: 'QuarantineAl',
               repo: '${{ inputs.app }}',
               issue_number: ${{ inputs.pr_number }},
-              body: 'Preview: https://pr-${{ inputs.pr_number }}-${{ inputs.app }}.dev.quarantine.al'
+              body: `Preview: https://pr-${{ inputs.pr_number }}-${{ inputs.app }}.${process.env.BASE_DOMAIN}`
             })
