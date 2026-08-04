@@ -13,6 +13,10 @@ on:
       app:
         required: true
         type: string
+      environment:
+        description: Target quarantine environment name ("dev" or "prod") — must match whichever environment pr-sandbox-up.yml brought this PR's sandbox up on
+        required: true
+        type: string
       pr_number:
         required: true
         type: string
@@ -22,7 +26,7 @@ env:
 
 jobs:
   down:
-    runs-on: [self-hosted, quarantine-dev]
+    runs-on: [self-hosted, "quarantine-${{ inputs.environment }}"]
     steps:
       - name: Tear down the sandbox
         working-directory: ${{ env.QUARANTINE_REPO_PATH }}
