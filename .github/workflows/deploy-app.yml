@@ -32,7 +32,7 @@ env:
 
 jobs:
   deploy:
-    runs-on: [self-hosted, quarantine-dev]
+    runs-on: [self-hosted, "quarantine-${{ inputs.environment }}"]
     steps:
       - name: Checkout app repo
         uses: actions/checkout@v4
