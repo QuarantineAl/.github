@@ -169,8 +169,22 @@ jobs:
             compose_files+=(-f "infra/edge/oauth2-proxy/compose.yaml")
           fi
 
+          # --env-file: without it, ${OIDC_CLIENT_ID_<APP>}/${OIDC_CLIENT_SECRET_<APP>}/
+          # ${OAUTH2_PROXY_COOKIE_SECRET} in infra/edge/oauth2-proxy/compose.yaml
+          # all resolve to blank strings (docker compose only substitutes from
+          # the calling shell's own exported vars otherwise, and this step only
+          # exports SUBDOMAIN/DOMAIN/<APP>_VERSION above) — confirmed live: the
+          # sandbox's own oauth2-proxy-<subdomain> instance crash-looped with
+          # "missing setting: cookie-secret ... client-id ... client-secret",
+          # which was never caught before since no PR sandbox had needs_oidc:
+          # true until Lazaretto — deploy-app.yml's own persistent-deployment
+          # path never hits this: it only ever brings up the app's own
+          # compose.yaml, never infra/edge/oauth2-proxy/compose.yaml (that
+          # instance comes up through `quarantine start`'s own env handling
+          # instead, a separate path this fix doesn't touch).
           docker compose \
             --project-name "pr-${{ inputs.pr_number }}-${{ inputs.app }}" \
+            --env-file "environments/${{ inputs.environment }}/.env" \
             "${compose_files[@]}" \
             --profile "${{ inputs.app }}" \
             up -d
