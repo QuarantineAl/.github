@@ -3,9 +3,28 @@ name: PR sandbox down (reusable)
 # Called on pull_request closed (merged or not — a closed PR's sandbox is
 # equally useless either way). Tears down the isolated Compose project;
 # volumes go with it (-v), since this is throwaway per-PR state, not data
-# worth retaining. Does not touch Postgres/Zitadel reap-mode provisioning —
-# that's only needed once a PR sandbox opts into needs_db/needs_oidc, which
-# lazaretto's catalog entry does not (own SQLite, no auth yet).
+# worth retaining.
+#
+# If <app>'s catalog.yaml entry has needs_oidc: true, this also deregisters
+# the PR's own redirect URI from the app's shared Zitadel Application via
+# `quarantine app remove-redirect` (platform/bin/quarantine), and tears down
+# that PR's own oauth2-proxy-<app> instance (infra/edge/oauth2-proxy/
+# compose.yaml) alongside the app's containers, in the same compose
+# invocation — see pr-sandbox-up.yml's matching comment. Teardown of the
+# actual containers/volumes always runs first, deregistration second and
+# best-effort: a failed Zitadel call shouldn't leave a PR sandbox's
+# containers running, but a successful teardown with a failed
+# deregistration still fails the job loudly (a stale redirect URI left on
+# the shared Application, worth someone noticing — not a real
+# vulnerability, just dead config, but not silently swallowed either).
+#
+# Driven entirely by catalog.yaml's own needs_oidc flag, not a hardcoded
+# app name — a future PR-sandboxed app gets this for free with no edit
+# here, same as pr-sandbox-up.yml.
+#
+# Does not touch Postgres reap-mode provisioning — that's a separate,
+# still-missing capability (see platform/docs/runners-and-sandboxing.md),
+# unrelated to the OIDC redirect-URI handling above.
 
 on:
   workflow_call:
@@ -28,11 +47,74 @@ jobs:
   down:
     runs-on: [self-hosted, "quarantine-${{ inputs.environment }}"]
     steps:
+      - name: Check whether this app needs OIDC
+        id: oidc
+        working-directory: ${{ env.QUARANTINE_REPO_PATH }}
+        run: |
+          git pull --ff-only
+          needs_oidc="$(yq eval '.apps[] | select(.name == "${{ inputs.app }}") | .needs_oidc' catalog.yaml)"
+          echo "needs_oidc=${needs_oidc}" >> "$GITHUB_OUTPUT"
+
+      # Same install step as pr-sandbox-up.yml/deploy-app.yml — keep all
+      # three in lockstep on version/checksums.
+      - name: Install quarantine CLI dependencies
+        if: steps.oidc.outputs.needs_oidc == 'true'
+        run: |
+          case "$(uname -m)" in
+            x86_64) arch=amd64 ;;
+            aarch64|arm64) arch=arm64 ;;
+            *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+
+          sops_version="3.13.3"
+          yq_version="4.53.3"
+          age_version="1.3.1"
+          declare -A sops_sha256=( [amd64]="e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b" [arm64]="53b0abacd38ef1b12a66d6c100956691b9cefce018d91f81e73ddf7438b94d77" )
+          declare -A yq_sha256=( [amd64]="fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4" [arm64]="578648e463a11c1b6db6010cbf41eafed6bee79466fcffa1bb446672cf7945ea" )
+          declare -A age_sha256=( [amd64]="bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377" [arm64]="c6878a324421b69e3e20b00ba17c04bc5c6dab0030cfe55bf8f68fa8d9e9093a" )
+
+          fetch_verified() {
+            local url="$1" expected="$2" dest="$3" tmp actual
+            tmp="$(mktemp)"
+            curl -fsSL -o "$tmp" "$url"
+            actual="$(sha256sum "$tmp" | awk '{print $1}')"
+            [[ "$actual" == "$expected" ]] || { echo "checksum mismatch for ${url}: expected ${expected}, got ${actual}" >&2; exit 1; }
+            chmod +x "$tmp"
+            sudo mv "$tmp" "$dest"
+          }
+
+          fetch_verified "https://github.com/getsops/sops/releases/download/v${sops_version}/sops-v${sops_version}.linux.${arch}" "${sops_sha256[$arch]}" /usr/local/bin/sops
+          fetch_verified "https://github.com/mikefarah/yq/releases/download/v${yq_version}/yq_linux_${arch}" "${yq_sha256[$arch]}" /usr/local/bin/yq
+
+          age_tmp="$(mktemp -d)"
+          age_tarball="${age_tmp}/age.tar.gz"
+          curl -fsSL -o "$age_tarball" "https://github.com/FiloSottile/age/releases/download/v${age_version}/age-v${age_version}-linux-${arch}.tar.gz"
+          actual="$(sha256sum "$age_tarball" | awk '{print $1}')"
+          [[ "$actual" == "${age_sha256[$arch]}" ]] || { echo "checksum mismatch for age tarball: expected ${age_sha256[$arch]}, got ${actual}" >&2; exit 1; }
+          tar xzf "$age_tarball" -C "$age_tmp"
+          sudo mv "${age_tmp}/age/age" "${age_tmp}/age/age-keygen" /usr/local/bin/
+          rm -rf "$age_tmp"
+
       - name: Tear down the sandbox
         working-directory: ${{ env.QUARANTINE_REPO_PATH }}
         run: |
+          compose_files=(-f "apps/first-party/${{ inputs.app }}/compose.yaml")
+          if [[ "${{ steps.oidc.outputs.needs_oidc }}" == "true" ]]; then
+            compose_files+=(-f "infra/edge/oauth2-proxy/compose.yaml")
+          fi
+
           docker compose \
             --project-name "pr-${{ inputs.pr_number }}-${{ inputs.app }}" \
-            -f "apps/first-party/${{ inputs.app }}/compose.yaml" \
+            "${compose_files[@]}" \
             --profile "${{ inputs.app }}" \
             down -v
+
+      - name: Deregister this PR's OIDC redirect URI
+        if: steps.oidc.outputs.needs_oidc == 'true'
+        working-directory: ${{ env.QUARANTINE_REPO_PATH }}
+        env:
+          QUARANTINE_CONFIG_FILE: /opt/quarantine/quarantine.yaml
+          BASE_DOMAIN: ${{ inputs.environment == 'dev' && 'dev.quarantine.al' || 'quarantine.al' }}
+        run: |
+          ./bin/quarantine app remove-redirect "${{ inputs.app }}" \
+            "https://pr-${{ inputs.pr_number }}-${{ inputs.app }}.${BASE_DOMAIN}/oauth2/callback"
