@@ -26,6 +26,15 @@ on:
         description: Commit SHA to deploy
         required: true
         type: string
+      # Opt-in, and off by default, because per-tenant instances are a
+      # lazaretto concept rather than a property of every first-party app —
+      # the caller that has tenants declares it, and this workflow stays
+      # generic. See the step at the bottom for what it actually does.
+      upgrade_tenants:
+        description: After the shared instance, roll the new image out to every per-tenant instance too
+        required: false
+        default: false
+        type: boolean
 
 env:
   QUARANTINE_REPO_PATH: /opt/quarantine/repo
@@ -171,3 +180,29 @@ jobs:
             -f "apps/first-party/${{ inputs.app }}/compose.yaml" \
             --profile "${{ inputs.app }}" \
             up -d
+
+      # Per-tenant instances run under their own Compose project names
+      # (quarantine-lazaretto-<tenant>), so the scoped `up` above — which
+      # targets quarantine-<env> and nothing else — deliberately never touches
+      # them. Nothing else does either: they sit outside `quarantine start`'s
+      # reconciliation loop by design. Without this step a tenant simply keeps
+      # serving whatever image it was created with, indefinitely.
+      #
+      # Ordered after the shared deploy on purpose. The shared instance is the
+      # canary: it takes the new image first, and a rollout that only starts
+      # once it is up has already had one real-world verification. From there
+      # `upgrade-all` goes tenant by tenant, each one proven healthy before the
+      # next is recreated (platform's tenant_up passes --wait), aborting the
+      # whole loop on the first failure — so a bad image costs one tenant, not
+      # the fleet.
+      #
+      # Recreating a tenant's backend KILLS any coding agent turn in flight
+      # there. That is accepted rather than drained: tenants are single-
+      # occupant today and an interrupted turn is recoverable. Revisit if a
+      # tenant ever holds a real team.
+      - name: Roll the new image out to per-tenant instances
+        if: ${{ inputs.upgrade_tenants }}
+        working-directory: ${{ env.QUARANTINE_REPO_PATH }}
+        env:
+          QUARANTINE_CONFIG_FILE: /opt/quarantine/quarantine.yaml
+        run: ./bin/quarantine tenant upgrade-all
