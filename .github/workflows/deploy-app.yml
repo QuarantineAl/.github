@@ -48,17 +48,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # lazaretto-specific: frontend/Dockerfile deliberately reads only
-      # frontend/.env.production (never a build ARG/ENV — an already-set
-      # process.env value, even empty, silently wins over the .env file, see
-      # that Dockerfile's own comment). Rewriting the file before build is
-      # the supported way to point a build at this environment's API host.
-      - name: Point frontend build at this environment's API host
-        if: inputs.app == 'lazaretto'
-        run: |
-          api_host="${{ inputs.app }}-api.${{ inputs.environment == 'dev' && 'dev.quarantine.al' || 'quarantine.al' }}"
-          echo "VITE_API_BASE=https://${api_host}" > app/frontend/.env.production
-
+      # NOTE: there is deliberately no step here writing VITE_API_BASE into
+      # frontend/.env.production, and re-adding one would break per-tenant
+      # deployments.
+      #
+      # This workflow used to bake an API host into the lazaretto frontend
+      # bundle before building. It no longer needs to: lazaretto's
+      # frontend/src/lib/api.ts derives its API host from the page's own
+      # hostname at runtime, using the <sub>.<domain> -> <sub>-api.<domain>
+      # pairing that the platform's compose fragment guarantees by templating
+      # both hostnames off one SUBDOMAIN. The derived value is byte-for-byte
+      # what this step used to write, for both environments:
+      #   dev  -> lazaretto.dev.quarantine.al  =>  lazaretto-api.dev.quarantine.al
+      #   prod -> lazaretto.quarantine.al      =>  lazaretto-api.quarantine.al
+      #
+      # Removing it is what makes ONE image serve every host it is deployed
+      # under. That matters because per-tenant Lazaretto instances
+      # (quarantine tenant add, platform's provisioners/lazaretto-tenant.sh)
+      # all run this same :dev/:prod image under their own hostnames — with a
+      # host baked in, every tenant's frontend would call the shared
+      # deployment's API instead of its own, and onboarding a tenant would
+      # otherwise require a CI image build per tenant.
+      #
+      # VITE_API_BASE is still honoured as an explicit override if a future
+      # deployment ever breaks the sibling-subdomain convention; it just is
+      # not set by default. See lazaretto's frontend/.env.production.
       - name: Build and push backend image
         uses: docker/build-push-action@v5
         with:
