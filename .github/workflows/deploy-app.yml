@@ -35,6 +35,15 @@ on:
         required: false
         default: false
         type: boolean
+      # Opt-in for the same reason as upgrade_tenants: a release marks "this
+      # is what prod is serving", so only the caller knows which of its
+      # environments deserves one. Defaulting to false also means merging
+      # this workflow changes nothing until a caller asks for it.
+      create_release:
+        description: After a successful deploy, tag the deployed SHA and publish a GitHub Release on the calling repo
+        required: false
+        default: false
+        type: boolean
 
 env:
   QUARANTINE_REPO_PATH: /opt/quarantine/repo
@@ -149,6 +158,34 @@ jobs:
           sudo mv "${age_tmp}/age/age" "${age_tmp}/age/age-keygen" /usr/local/bin/
           rm -rf "$age_tmp"
 
+      # The compose `up` resolves the SHA tag, not `:${{ inputs.environment }}`.
+      # Both name the same image the instant this job runs, but only the SHA
+      # still does a minute later — `:dev`/`:prod` are reassigned by every
+      # subsequent deploy. Pulling through the floating tag left a real race:
+      # between the push above and the `up` below, a second merge can move
+      # `:prod`, and this job would then deploy a build it did not make, while
+      # reporting success for the commit it was handed.
+      #
+      # `app add` deliberately still records `${{ inputs.environment }}` in the
+      # manifest rather than the SHA. environments/<env>/manifest.yaml is
+      # git-tracked and meant to be committed (see platform/.gitignore), and
+      # the hosts run this job in their own checkout at
+      # ${{ env.QUARANTINE_REPO_PATH }}. Writing a fresh SHA on every deploy
+      # would leave that file permanently modified there, so the moment anyone
+      # commits a manifest change upstream — adding an app, as SearXNG did —
+      # the `git pull --ff-only` above aborts on the conflict and an unrelated
+      # repo's deploy fails. Recording the environment tag keeps the write
+      # idempotent and the tree clean.
+      #
+      # The cost is that a later `quarantine start` reconciles the shared
+      # instance back through `:${{ inputs.environment }}`, i.e. forward to
+      # whatever is newest, rather than holding this SHA. That is the
+      # pre-existing behaviour, not something introduced here — but it is why
+      # the SHA has to be recorded somewhere a human can find it, which is
+      # what the release job below is for. Making the manifest itself hold the
+      # SHA needs CI to commit and push it, and that needs the hosts to stop
+      # carrying uncommitted environments/ edits first.
+      #
       # Deliberately NOT `quarantine start`: that reconciles the WHOLE
       # environment (traefik, postgres, zitadel, observability, the CI
       # runner pool itself, ...), which a routine app deploy has no reason
@@ -174,7 +211,7 @@ jobs:
 
           export DOMAIN="$(yq eval '.domain' "$QUARANTINE_CONFIG_FILE")"
           version_var="$(printf '%s' "${{ inputs.app }}" | tr '[:lower:]-' '[:upper:]_')_VERSION"
-          export "${version_var}=${{ inputs.environment }}"
+          export "${version_var}=${{ inputs.ref }}"
           docker compose \
             --project-name "quarantine-${{ inputs.environment }}" \
             -f "apps/first-party/${{ inputs.app }}/compose.yaml" \
@@ -200,9 +237,131 @@ jobs:
       # there. That is accepted rather than drained: tenants are single-
       # occupant today and an interrupted turn is recoverable. Revisit if a
       # tenant ever holds a real team.
+      #
+      # The SHA is passed explicitly for the same reason the step above pulls
+      # through it, and it sticks better here. Each tenant stores its own
+      # version in tenant.conf, so with no argument upgrade-all keeps
+      # whatever is written there — the floating `:<environment>` tag — and
+      # merely re-pulls it, which is a live race against any build that
+      # publishes mid-rollout, and a fleet that can end up split across two
+      # images with nothing recording which is which.
+      #
+      # Unlike the manifest, tenant.conf lives OUTSIDE the repo (under
+      # $QUARANTINE_TENANTS_DIR, see the provisioner's header), so writing a
+      # new SHA here every deploy dirties no git-tracked file and cannot
+      # break the next `git pull --ff-only`. It also survives: nothing
+      # reconciles tenants back to a floating tag the way `quarantine start`
+      # would for the shared instance, so a tenant stays on the exact build
+      # it was given until something upgrades it. `tenant list` reports it
+      # too — that column reads the running image, and it said "prod" for
+      # every tenant before this.
       - name: Roll the new image out to per-tenant instances
         if: ${{ inputs.upgrade_tenants }}
         working-directory: ${{ env.QUARANTINE_REPO_PATH }}
         env:
           QUARANTINE_CONFIG_FILE: /opt/quarantine/quarantine.yaml
-        run: ./bin/quarantine tenant upgrade-all
+        run: ./bin/quarantine tenant upgrade-all ${{ inputs.ref }}
+
+  # Runs only after `deploy` succeeds, so a release means "this is what the
+  # environment is serving" rather than "this compiled". Nothing here can
+  # affect the deployment; the worst case is a deployed environment with no
+  # release row, which is recoverable by hand.
+  #
+  # GitHub-hosted rather than the self-hosted pool: this only talks to the
+  # API, and it should not queue behind — or run beside — the runners that
+  # exist to touch the environment.
+  # Needs `contents: write`, which the CALLER has to grant — see lazaretto's
+  # deploy-main.yml. There is deliberately no `permissions:` block here:
+  # a called workflow can only ever downgrade what the caller passed down, so
+  # asking for write from inside would be an escalation for every existing
+  # caller that grants `contents: read` — and permissions are resolved when
+  # the job is created, which is not obviously after `if:` is evaluated. A
+  # caller that sets create_release without widening its own permissions gets
+  # a failed release job and a deployed environment, which is the right way
+  # round for the two to fail.
+  release:
+    needs: deploy
+    if: ${{ inputs.create_release }}
+    runs-on: ubuntu-latest
+    steps:
+      # `github.*` in a reusable workflow is the CALLER's context, so
+      # github.repository is the app repo (e.g. QuarantineAl/lazaretto) and
+      # the release lands there, next to the code it was built from. No
+      # checkout: everything below is API-only, and `gh` reads GH_REPO.
+      - name: Tag the deployed commit and publish a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ inputs.ref }}
+          APP: ${{ inputs.app }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+
+          # CalVer, not semver, and deliberately. Semver's job is to tell
+          # consumers which upgrades are safe to take, and this app has no
+          # consumers who choose: every instance, shared and per-tenant, is
+          # rolled by the job above. A major/minor/patch decision here would
+          # be a number nobody can act on — and deriving one automatically
+          # would mean conventional commits, which this org does not write.
+          # A date answers the question that does get asked: when did this
+          # ship, and what was on prod at the time.
+          day="$(date -u +%Y.%m.%d)"
+
+          # Sequence within the day, taken from the highest existing tag
+          # rather than a count, so a deleted tag cannot hand out a number
+          # that is already in use. matching-refs returns [] (not 404) when
+          # nothing matches, which is the first release of the day.
+          n="$(gh api "repos/${GH_REPO}/git/matching-refs/tags/v${day}-" \
+                 --jq '[.[].ref | split("-") | last | tonumber] | max // 0')"
+          tag="v${day}-$(( n + 1 ))"
+          echo "Releasing ${tag} at ${SHA}"
+
+          # Generated from the PRs merged since the last release, by commit
+          # ancestry — which is why it works here despite the org merging
+          # rather than squashing: PR titles never reach commit subjects, and
+          # nothing below parses a commit message.
+          notes="$(gh api "repos/${GH_REPO}/releases/generate-notes" \
+                     -f tag_name="$tag" -f target_commitish="$SHA" --jq .body)"
+
+          # The rollback recipe is in the body on purpose. The SHA tag is the
+          # only durable handle on this build — `:${ENVIRONMENT}` will have
+          # moved by the time anyone needs it — so the release row is where
+          # someone under pressure can find both the identifier and what to
+          # do with it, without reconstructing either from Actions history.
+          # Backticks are escaped because this heredoc is unquoted — it has to
+          # be, to interpolate the values — so an unescaped one would run as
+          # command substitution instead of rendering a markdown code span.
+          # $notes is expanded once, here; its own content is not rescanned,
+          # so nothing a PR title contains can execute.
+          cat > "${RUNNER_TEMP}/notes.md" <<EOF
+          Deployed to **${ENVIRONMENT}** from \`${SHA}\`.
+
+          ### Images
+
+              ghcr.io/quarantineal/${APP}-backend:${SHA}
+              ghcr.io/quarantineal/${APP}-frontend:${SHA}
+
+          ### Roll back to this build
+
+          On the ${ENVIRONMENT} host, in \`/opt/quarantine/repo\`:
+
+              ./bin/quarantine app add ${APP} --version ${SHA}
+              ./bin/quarantine start
+              ./bin/quarantine tenant upgrade-all ${SHA}
+
+          The first two pin and apply the shared instance; the third rolls the
+          per-tenant instances, which sit outside \`start\`'s reconciliation
+          loop — drop it if this app has no tenants. Note that \`app add\` edits
+          the tracked manifest, so commit it or the next deploy's \`git pull\`
+          may conflict.
+
+          ---
+
+          ${notes}
+          EOF
+
+          gh release create "$tag" \
+            --target "$SHA" \
+            --title "$tag" \
+            --notes-file "${RUNNER_TEMP}/notes.md"
