@@ -91,11 +91,20 @@ jobs:
       # VITE_API_BASE is still honoured as an explicit override if a future
       # deployment ever breaks the sibling-subdomain convention; it just is
       # not set by default. See lazaretto's frontend/.env.production.
+      #
+      # BUILD_SHA puts the deployed commit inside the images, so a running
+      # deployment can say what it is: the backend reports it from GET /health
+      # and the frontend shows it in the nav. Everything else that knows the
+      # SHA — the image tag, the release, this log — is outside the thing
+      # actually serving traffic, and answering "what is running right now"
+      # from outside is exactly what was not possible before.
       - name: Build and push backend image
         uses: docker/build-push-action@v5
         with:
           context: app/backend
           push: true
+          build-args: |
+            BUILD_SHA=${{ inputs.ref }}
           tags: |
             ghcr.io/quarantineal/${{ inputs.app }}-backend:${{ inputs.environment }}
             ghcr.io/quarantineal/${{ inputs.app }}-backend:${{ inputs.ref }}
@@ -105,6 +114,8 @@ jobs:
         with:
           context: app/frontend
           push: true
+          build-args: |
+            BUILD_SHA=${{ inputs.ref }}
           tags: |
             ghcr.io/quarantineal/${{ inputs.app }}-frontend:${{ inputs.environment }}
             ghcr.io/quarantineal/${{ inputs.app }}-frontend:${{ inputs.ref }}

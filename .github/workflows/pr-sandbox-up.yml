@@ -85,11 +85,17 @@ jobs:
       # Dropping it keeps this reusable workflow free of a lazaretto-specific
       # special case, and keeps PR sandboxes on the same code path as every
       # other deployment rather than a build-time one nothing else uses.
+      #
+      # BUILD_SHA is worth passing here even though a sandbox is disposable:
+      # the whole point of one is deciding whether the commit under review
+      # behaves, and a reviewer who has pushed twice needs to know which push
+      # they are looking at. The `pr-<n>` image tag cannot tell them — it is
+      # reassigned by every push to the branch.
       - name: Build and push PR-tagged images
         run: |
           tag="pr-${{ inputs.pr_number }}"
-          docker build -t "ghcr.io/quarantineal/${{ inputs.app }}-backend:${tag}" app/backend
-          docker build -t "ghcr.io/quarantineal/${{ inputs.app }}-frontend:${tag}" app/frontend
+          docker build --build-arg BUILD_SHA="${{ inputs.ref }}" -t "ghcr.io/quarantineal/${{ inputs.app }}-backend:${tag}" app/backend
+          docker build --build-arg BUILD_SHA="${{ inputs.ref }}" -t "ghcr.io/quarantineal/${{ inputs.app }}-frontend:${tag}" app/frontend
           docker push "ghcr.io/quarantineal/${{ inputs.app }}-backend:${tag}"
           docker push "ghcr.io/quarantineal/${{ inputs.app }}-frontend:${tag}"
 
