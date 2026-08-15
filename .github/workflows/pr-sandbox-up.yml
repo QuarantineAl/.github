@@ -186,11 +186,16 @@ jobs:
           # sandbox's own oauth2-proxy-<subdomain> instance crash-looped with
           # "missing setting: cookie-secret ... client-id ... client-secret",
           # which was never caught before since no PR sandbox had needs_oidc:
-          # true until Lazaretto — deploy-app.yml's own persistent-deployment
-          # path never hits this: it only ever brings up the app's own
-          # compose.yaml, never infra/edge/oauth2-proxy/compose.yaml (that
-          # instance comes up through `quarantine start`'s own env handling
-          # instead, a separate path this fix doesn't touch).
+          # true until Lazaretto. Update: the claim this used to make here —
+          # that deploy-app.yml's persistent-deployment path never hits this
+          # because it only brings up the app's own compose.yaml — turned out
+          # to be time-bound, not structural: it held only as long as no app's
+          # OWN compose.yaml referenced an OIDC-sourced var directly. The first
+          # time one did (lazaretto pinning its own token audience to
+          # OIDC_CLIENT_ID_LAZARETTO, not just the oauth2-proxy sidecar
+          # consuming it), deploy-app.yml crash-looped the exact same way —
+          # confirmed live, same error shape. deploy-app.yml now carries this
+          # same --env-file flag for that reason.
           docker compose \
             --project-name "pr-${{ inputs.pr_number }}-${{ inputs.app }}" \
             --env-file "environments/${{ inputs.environment }}/.env" \
