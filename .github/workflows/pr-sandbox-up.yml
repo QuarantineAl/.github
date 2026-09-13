@@ -13,7 +13,7 @@ name: PR sandbox up (reusable)
 # the `edge` network so Traefik's existing label-based discovery picks it
 # up with no new mechanism. Requires that fragment to template its Host()
 # rules off a SUBDOMAIN var rather than a literal name — see platform's own
-# apps/first-party/lazaretto/compose.yaml.
+# apps/first-party/lazzaretto/compose.yaml.
 #
 # If <app>'s catalog.yaml entry has needs_oidc: true, this ALSO brings up
 # that app's own oauth2-proxy-<app> instance (infra/edge/oauth2-proxy/
@@ -77,12 +77,12 @@ jobs:
 
       # NOTE: no step writes VITE_API_BASE into frontend/.env.production here
       # either — see the matching note in deploy-app.yml for the full
-      # rationale. lazaretto's frontend derives its API host from the page's
+      # rationale. lazzaretto's frontend derives its API host from the page's
       # own hostname at runtime, and for a PR sandbox that derivation is
       # exactly what this step used to write:
-      #   pr-<n>-lazaretto.dev.quarantine.al
-      #     => pr-<n>-lazaretto-api.dev.quarantine.al
-      # Dropping it keeps this reusable workflow free of a lazaretto-specific
+      #   pr-<n>-lazzaretto.dev.quarantine.al
+      #     => pr-<n>-lazzaretto-api.dev.quarantine.al
+      # Dropping it keeps this reusable workflow free of a lazzaretto-specific
       # special case, and keeps PR sandboxes on the same code path as every
       # other deployment rather than a build-time one nothing else uses.
       #
@@ -163,7 +163,7 @@ jobs:
           export DOMAIN="${BASE_DOMAIN}"
           # Matches bin/quarantine's own <name> -> <APP>_VERSION convention
           # (tr '[:lower:]-' '[:upper:]_') — the compose fragment's
-          # ${LAZARETTO_VERSION:-CHANGEME} is uppercase and interpolation
+          # ${LAZZARETTO_VERSION:-CHANGEME} is uppercase and interpolation
           # is case-sensitive, so a lowercase export here would silently
           # fall through to the CHANGEME placeholder image tag instead.
           version_var="$(printf '%s' "${{ inputs.app }}" | tr '[:lower:]-' '[:upper:]_')_VERSION"
@@ -186,13 +186,13 @@ jobs:
           # sandbox's own oauth2-proxy-<subdomain> instance crash-looped with
           # "missing setting: cookie-secret ... client-id ... client-secret",
           # which was never caught before since no PR sandbox had needs_oidc:
-          # true until Lazaretto. Update: the claim this used to make here —
+          # true until Lazzaretto. Update: the claim this used to make here —
           # that deploy-app.yml's persistent-deployment path never hits this
           # because it only brings up the app's own compose.yaml — turned out
           # to be time-bound, not structural: it held only as long as no app's
           # OWN compose.yaml referenced an OIDC-sourced var directly. The first
-          # time one did (lazaretto pinning its own token audience to
-          # OIDC_CLIENT_ID_LAZARETTO, not just the oauth2-proxy sidecar
+          # time one did (lazzaretto pinning its own token audience to
+          # OIDC_CLIENT_ID_LAZZARETTO, not just the oauth2-proxy sidecar
           # consuming it), deploy-app.yml crash-looped the exact same way —
           # confirmed live, same error shape. deploy-app.yml now carries this
           # same --env-file flag for that reason.

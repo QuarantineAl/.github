@@ -1,13 +1,13 @@
 name: Deploy app (reusable)
 
 # Called by a first-party app repo's own thin caller workflow (e.g.
-# lazaretto's deploy-develop.yml). Builds+pushes that app's image(s) to
+# lazzaretto's deploy-develop.yml). Builds+pushes that app's image(s) to
 # GHCR, then reconciles it into the target environment via the `quarantine`
 # CLI (QuarantineAl/platform, already checked out at /opt/quarantine/repo on
 # the runner host — see platform/install.sh). Runs on the shared,
 # ephemeral, trusted-only runner pool — never for untrusted/fork-PR code.
 #
-# Assumes a two-image app shape (backend + frontend), matching lazaretto
+# Assumes a two-image app shape (backend + frontend), matching lazzaretto
 # today. If a future first-party app has a different shape, this workflow
 # needs a per-app branch, not a rewrite — keep it generic where possible.
 
@@ -15,7 +15,7 @@ on:
   workflow_call:
     inputs:
       app:
-        description: Catalog/profile name in platform's catalog.yaml (e.g. "lazaretto")
+        description: Catalog/profile name in platform's catalog.yaml (e.g. "lazzaretto")
         required: true
         type: string
       environment:
@@ -27,7 +27,7 @@ on:
         required: true
         type: string
       # Opt-in, and off by default, because per-tenant instances are a
-      # lazaretto concept rather than a property of every first-party app —
+      # lazzaretto concept rather than a property of every first-party app —
       # the caller that has tenants declares it, and this workflow stays
       # generic. See the step at the bottom for what it actually does.
       upgrade_tenants:
@@ -70,19 +70,19 @@ jobs:
       # frontend/.env.production, and re-adding one would break per-tenant
       # deployments.
       #
-      # This workflow used to bake an API host into the lazaretto frontend
-      # bundle before building. It no longer needs to: lazaretto's
+      # This workflow used to bake an API host into the lazzaretto frontend
+      # bundle before building. It no longer needs to: lazzaretto's
       # frontend/src/lib/api.ts derives its API host from the page's own
       # hostname at runtime, using the <sub>.<domain> -> <sub>-api.<domain>
       # pairing that the platform's compose fragment guarantees by templating
       # both hostnames off one SUBDOMAIN. The derived value is byte-for-byte
       # what this step used to write, for both environments:
-      #   dev  -> lazaretto.dev.quarantine.al  =>  lazaretto-api.dev.quarantine.al
-      #   prod -> lazaretto.quarantine.al      =>  lazaretto-api.quarantine.al
+      #   dev  -> lazzaretto.dev.quarantine.al  =>  lazzaretto-api.dev.quarantine.al
+      #   prod -> lazzaretto.quarantine.al      =>  lazzaretto-api.quarantine.al
       #
       # Removing it is what makes ONE image serve every host it is deployed
-      # under. That matters because per-tenant Lazaretto instances
-      # (quarantine tenant add, platform's provisioners/lazaretto-tenant.sh)
+      # under. That matters because per-tenant Lazzaretto instances
+      # (quarantine tenant add, platform's provisioners/lazzaretto-tenant.sh)
       # all run this same :dev/:prod image under their own hostnames — with a
       # host baked in, every tenant's frontend would call the shared
       # deployment's API instead of its own, and onboarding a tenant would
@@ -90,7 +90,7 @@ jobs:
       #
       # VITE_API_BASE is still honoured as an explicit override if a future
       # deployment ever breaks the sibling-subdomain convention; it just is
-      # not set by default. See lazaretto's frontend/.env.production.
+      # not set by default. See lazzaretto's frontend/.env.production.
       #
       # BUILD_SHA puts the deployed commit inside the images, so a running
       # deployment can say what it is: the backend reports it from GET /health
@@ -227,9 +227,9 @@ jobs:
           # app's own compose.yaml references resolves to a blank string —
           # docker compose only substitutes from the calling shell's own
           # exported vars otherwise, and this step exports only
-          # DOMAIN/<APP>_VERSION above. Confirmed live: lazaretto-backend
+          # DOMAIN/<APP>_VERSION above. Confirmed live: lazzaretto-backend
           # crash-looped on "ZITADEL_CLIENT_ID must be set" the first time its
-          # own compose.yaml started referencing OIDC_CLIENT_ID_LAZARETTO
+          # own compose.yaml started referencing OIDC_CLIENT_ID_LAZZARETTO
           # directly (for its own token-audience check, not just the
           # oauth2-proxy sidecar). pr-sandbox-up.yml already carries this same
           # flag for exactly this reason — this step just predates an app
@@ -246,7 +246,7 @@ jobs:
             up -d
 
       # Per-tenant instances run under their own Compose project names
-      # (quarantine-lazaretto-<tenant>), so the scoped `up` above — which
+      # (quarantine-lazzaretto-<tenant>), so the scoped `up` above — which
       # targets quarantine-<env> and nothing else — deliberately never touches
       # them. Nothing else does either: they sit outside `quarantine start`'s
       # reconciliation loop by design. Without this step a tenant simply keeps
@@ -297,7 +297,7 @@ jobs:
   # GitHub-hosted rather than the self-hosted pool: this only talks to the
   # API, and it should not queue behind — or run beside — the runners that
   # exist to touch the environment.
-  # Needs `contents: write`, which the CALLER has to grant — see lazaretto's
+  # Needs `contents: write`, which the CALLER has to grant — see lazzaretto's
   # deploy-main.yml. There is deliberately no `permissions:` block here:
   # a called workflow can only ever downgrade what the caller passed down, so
   # asking for write from inside would be an escalation for every existing
@@ -312,7 +312,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # `github.*` in a reusable workflow is the CALLER's context, so
-      # github.repository is the app repo (e.g. QuarantineAl/lazaretto) and
+      # github.repository is the app repo (e.g. QuarantineAl/lazzaretto) and
       # the release lands there, next to the code it was built from. No
       # checkout: everything below is API-only, and `gh` reads GH_REPO.
       - name: Tag the deployed commit and publish a release
