@@ -47,9 +47,6 @@ quarantine start
 | Product | What it does |
 |---|---|
 | **Lazzaretto** | Runs coding agents and LLMs from a browser, each session sealed in its own workspace |
-| **Kujtime** | A city-by-city memory archive, reviewed by an editorial team and published to each city's channels |
-| **BEM** and **delivery-note-ai** | Read warehouse receipts and delivery notes from PDFs and photos into structured data |
-| **Interactive Real Estate** | Interactive building and unit explorer for property sites |
 | **toolkit** | Shared design system: `@quarantineal/ui`, `icons`, `design-tokens` |
 
 ## Principles

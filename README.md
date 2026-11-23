@@ -30,7 +30,7 @@ jobs:
     secrets: inherit
 ```
 
-`deploy-app.yml` assumes a two-image app (backend + frontend), which is lazzaretto's shape. Lazzaretto is the only caller today. kujtime, bem, delivery-note-ai, docs, residences and qualitech deploy with their own inline jobs on the same runner pool.
+`deploy-app.yml` assumes a two-image app (backend + frontend), which is lazzaretto's shape. Lazzaretto is the only caller today. Other apps deploy with their own inline jobs on the same runner pool.
 
 See platform's [`docs/runners-and-sandboxing.md`](https://github.com/QuarantineAl/platform/blob/main/docs/runners-and-sandboxing.md) for the full runner and sandbox model.
 

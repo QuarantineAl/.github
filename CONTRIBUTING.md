@@ -30,7 +30,7 @@ To stand up a real environment, follow the [platform README](https://github.com/
 Not every repo uses the same model. Check the default branch before you branch.
 
 - **platform** and **docs**: trunk-based. Branch off `main` and open your PR against `main`.
-- **App repos** (lazzaretto, kujtime, bem, delivery-note-ai, ...): branch off `develop` and open your PR against `develop`. A merge to `develop` deploys to the dev environment; `main` is what runs in prod.
+- **App repos** such as lazzaretto: branch off `develop` and open your PR against `develop`. A merge to `develop` deploys to the dev environment; `main` is what runs in prod.
 
 Every change goes through a pull request, never a direct push to `main` or `develop`. On platform this is enforced by branch protection.
 
@@ -41,7 +41,7 @@ Branch names: `feat/…`, `fix/…`, `docs/…`, `chore/…`, short and descript
 Write the subject as a short imperative sentence that says what the change does, for example:
 
 ```
-Add bem to the catalog and enable it in dev
+Add uptime-kuma to the catalog and enable it in dev
 Pass --env-file to the PR sandbox's docker compose up
 ```
 
