@@ -72,7 +72,7 @@ App repos deploy through GitHub Actions on the org's self-hosted runners (`[self
 
 ## Reporting security issues
 
-Please **do not** open public issues for security vulnerabilities. Contact the QuarantineAl maintainers privately instead, and include enough detail to reproduce the problem.
+Please **do not** open public issues for security vulnerabilities. Report them privately with the **Report a vulnerability** button on the repo's Security tab. See [SECURITY.md](SECURITY.md) for details.
 
 ## Questions?
 
