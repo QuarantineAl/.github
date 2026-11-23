@@ -36,11 +36,11 @@ quarantine start
 |---|---|---|
 | Orchestration | **Docker Compose v2** | Simple, portable, no cluster overhead |
 | Reverse proxy | **Traefik v3** | Automatic TLS, label-based routing |
-| Identity & SSO | **Zitadel** | Single sign-on for every service |
+| Identity & SSO | **Zitadel** + oauth2-proxy | Single sign-on for every service, even ones without native OIDC |
 | Database | **PostgreSQL** (shared) | One instance, many databases |
-| Observability | **SigNoz** + OpenTelemetry | Traces, metrics and logs in one place |
-| Deployments | **Komodo** | GitOps-style continuous delivery |
-| Secrets | **SOPS + age** | Encrypted secrets, committed safely |
+| Observability | **SigNoz** + OpenTelemetry | Traces, metrics and logs in one place, switched on per environment |
+| Deployments | **GitHub Actions** on self-hosted runners | Merge to deploy; every PR can get its own sandbox |
+| Secrets | **SOPS + age** | Encrypted secrets, committed safely, one key per environment |
 
 ## Built on quarantine
 
@@ -61,11 +61,11 @@ quarantine start
 
 ## Status
 
-Early development, built in the open. Follow along, open issues, or start a discussion.
+Early development, built in the open. The platform runs our own dev and prod environments today. Follow along or open an issue.
 
 ## Contributing
 
-Contributions are welcome. Read the [contributing guide](https://github.com/QuarantineAl/.github/blob/main/CONTRIBUTING.md) and look for issues labeled `good first issue`.
+Contributions are welcome. Read the [contributing guide](https://github.com/QuarantineAl/.github/blob/main/CONTRIBUTING.md) first.
 
 ## License
 
