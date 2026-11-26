@@ -38,6 +38,8 @@ quarantine start
 | Reverse proxy | **Traefik v3** | Automatic TLS, label-based routing |
 | Identity & SSO | **Zitadel** + oauth2-proxy | Single sign-on for every service, even ones without native OIDC |
 | Database | **PostgreSQL** (shared) | One instance, many databases |
+| File storage | **Garage** (S3-compatible) | Any app gets its own bucket by asking for one |
+| Backups | **restic**, via `quarantine backup` | Nightly and encrypted, sent off the server; restore a whole volume or a single file |
 | Observability | **SigNoz** + OpenTelemetry | Traces, metrics and logs in one place, switched on per environment |
 | Deployments | **GitHub Actions** on self-hosted runners | Merge to deploy; every PR can get its own sandbox |
 | Secrets | **SOPS + age** | Encrypted secrets, committed safely, one key per environment |
