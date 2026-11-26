@@ -45,6 +45,11 @@ env:
 
 jobs:
   down:
+    timeout-minutes: 15
+    # Up and down for the same PR never run at the same time.
+    concurrency:
+      group: sandbox-${{ inputs.app }}-${{ inputs.pr_number }}
+      cancel-in-progress: false
     runs-on: [self-hosted, "quarantine-${{ inputs.environment }}"]
     steps:
       - name: Check whether this app needs OIDC

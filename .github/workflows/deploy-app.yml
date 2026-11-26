@@ -50,17 +50,23 @@ env:
 
 jobs:
   deploy:
+    timeout-minutes: 30
+    # One deploy per app and environment at a time, so two quick merges
+    # can't race each other. Callers' own groups still apply on top.
+    concurrency:
+      group: deploy-${{ inputs.app }}-${{ inputs.environment }}
+      cancel-in-progress: false
     runs-on: [self-hosted, "quarantine-${{ inputs.environment }}"]
     steps:
       - name: Checkout app repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: QuarantineAl/${{ inputs.app }}
           ref: ${{ inputs.ref }}
           path: app
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -99,7 +105,7 @@ jobs:
       # actually serving traffic, and answering "what is running right now"
       # from outside is exactly what was not possible before.
       - name: Build and push backend image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: app/backend
           push: true
@@ -110,7 +116,7 @@ jobs:
             ghcr.io/quarantineal/${{ inputs.app }}-backend:${{ inputs.ref }}
 
       - name: Build and push frontend image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: app/frontend
           push: true
@@ -220,7 +226,7 @@ jobs:
           git pull --ff-only
           ./bin/quarantine app add ${{ inputs.app }} --version ${{ inputs.environment }}
 
-          export DOMAIN="$(yq eval '.domain' "$QUARANTINE_CONFIG_FILE")"
+          DOMAIN="$(yq eval '.domain' "$QUARANTINE_CONFIG_FILE")"; export DOMAIN
           version_var="$(printf '%s' "${{ inputs.app }}" | tr '[:lower:]-' '[:upper:]_')_VERSION"
           export "${version_var}=${{ inputs.ref }}"
           # --env-file: without it, any ${OIDC_CLIENT_ID_<APP>}-shaped var an
@@ -307,6 +313,7 @@ jobs:
   # a failed release job and a deployed environment, which is the right way
   # round for the two to fail.
   release:
+    timeout-minutes: 5
     needs: deploy
     if: ${{ inputs.create_release }}
     runs-on: ubuntu-latest
